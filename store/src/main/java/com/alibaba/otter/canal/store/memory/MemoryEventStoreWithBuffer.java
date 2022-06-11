@@ -37,40 +37,40 @@ import com.alibaba.otter.canal.store.model.Events;
  */
 public class MemoryEventStoreWithBuffer extends AbstractCanalStoreScavenge implements CanalEventStore<Event>, CanalStoreScavenge {
 
-    private static final long INIT_SEQUENCE = -1;
-    private int               bufferSize    = 16 * 1024;
-    private int               bufferMemUnit = 1024;                                      // memsize的单位，默认为1kb大小
-    private int               indexMask;
-    private Event[]           entries;
+    protected static final long INIT_SEQUENCE = -1;
+    protected int               bufferSize    = 16 * 1024;
+    protected int               bufferMemUnit = 1024;                                      // memsize的单位，默认为1kb大小
+    protected int               indexMask;
+    protected Event[]           entries;
 
     // 记录下put/get/ack操作的三个下标
-    private AtomicLong        putSequence   = new AtomicLong(INIT_SEQUENCE);             // 代表当前put操作最后一次写操作发生的位置
-    private AtomicLong        getSequence   = new AtomicLong(INIT_SEQUENCE);             // 代表当前get操作读取的最后一条的位置
-    private AtomicLong        ackSequence   = new AtomicLong(INIT_SEQUENCE);             // 代表当前ack操作的最后一条的位置
+    protected AtomicLong        putSequence   = new AtomicLong(INIT_SEQUENCE);             // 代表当前put操作最后一次写操作发生的位置
+    protected AtomicLong        getSequence   = new AtomicLong(INIT_SEQUENCE);             // 代表当前get操作读取的最后一条的位置
+    protected AtomicLong        ackSequence   = new AtomicLong(INIT_SEQUENCE);             // 代表当前ack操作的最后一条的位置
 
     // 记录下put/get/ack操作的三个memsize大小
-    private AtomicLong        putMemSize    = new AtomicLong(0);
-    private AtomicLong        getMemSize    = new AtomicLong(0);
-    private AtomicLong        ackMemSize    = new AtomicLong(0);
+    protected AtomicLong        putMemSize    = new AtomicLong(0);
+    protected AtomicLong        getMemSize    = new AtomicLong(0);
+    protected AtomicLong        ackMemSize    = new AtomicLong(0);
 
     // 记录下put/get/ack操作的三个execTime
-    private AtomicLong        putExecTime   = new AtomicLong(System.currentTimeMillis());
-    private AtomicLong        getExecTime   = new AtomicLong(System.currentTimeMillis());
-    private AtomicLong        ackExecTime   = new AtomicLong(System.currentTimeMillis());
+    protected AtomicLong        putExecTime   = new AtomicLong(System.currentTimeMillis());
+    protected AtomicLong        getExecTime   = new AtomicLong(System.currentTimeMillis());
+    protected AtomicLong        ackExecTime   = new AtomicLong(System.currentTimeMillis());
 
     // 记录下put/get/ack操作的三个table rows
-    private AtomicLong        putTableRows  = new AtomicLong(0);
-    private AtomicLong        getTableRows  = new AtomicLong(0);
-    private AtomicLong        ackTableRows  = new AtomicLong(0);
+    protected AtomicLong        putTableRows  = new AtomicLong(0);
+    protected AtomicLong        getTableRows  = new AtomicLong(0);
+    protected AtomicLong        ackTableRows  = new AtomicLong(0);
 
     // 阻塞put/get操作控制信号
-    private ReentrantLock     lock          = new ReentrantLock();
-    private Condition         notFull       = lock.newCondition();
-    private Condition         notEmpty      = lock.newCondition();
+    protected ReentrantLock     lock          = new ReentrantLock();
+    protected Condition         notFull       = lock.newCondition();
+    protected Condition         notEmpty      = lock.newCondition();
 
-    private BatchMode         batchMode     = BatchMode.ITEMSIZE;                        // 默认为内存大小模式
-    private boolean           ddlIsolation  = false;
-    private boolean           raw           = true;                                      // 针对entry是否开启raw模式
+    protected BatchMode         batchMode     = BatchMode.ITEMSIZE;                        // 默认为内存大小模式
+    protected boolean           ddlIsolation  = false;
+    protected boolean           raw           = true;                                      // 针对entry是否开启raw模式
 
     public MemoryEventStoreWithBuffer(){
 
@@ -523,7 +523,7 @@ public class MemoryEventStoreWithBuffer extends AbstractCanalStoreScavenge imple
     /**
      * 查询是否有空位
      */
-    private boolean checkFreeSlotAt(final long sequence) {
+    protected boolean checkFreeSlotAt(final long sequence) {
         final long wrapPoint = sequence - bufferSize;
         final long minPoint = getMinimumGetOrAck();
         if (wrapPoint > minPoint) { // 刚好追上一轮
