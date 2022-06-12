@@ -29,12 +29,11 @@ import com.alibaba.otter.canal.store.model.Events;
  * @author jianghang 2012-6-20 下午02:50:36
  * @version 1.0.0
  */
+@SuppressWarnings("BusyWait")
 public class MemoryEventStoreMultiThreadTest extends MemoryEventStoreBase {
 
-    private ExecutorService            executor = Executors.newFixedThreadPool(2); // 1
-                                                                                   // producer
-                                                                                   // ,1
-                                                                                   // cousmer
+    private final ExecutorService executor = Executors.newFixedThreadPool(2);
+
     private MemoryEventStoreWithBuffer eventStore;
 
     @Before
@@ -49,50 +48,51 @@ public class MemoryEventStoreMultiThreadTest extends MemoryEventStoreBase {
     public void tearDown() {
         eventStore.stop();
     }
+
     @Ignore
     @Test
     public void test() {
         CountDownLatch latch = new CountDownLatch(1);
         BooleanMutex mutex = new BooleanMutex(true);
         Producer producer = new Producer(mutex, 10);
-        Cosumer cosumer = new Cosumer(latch, 20, 50);
+        Consumer consumer = new Consumer(latch, 20, 50);
 
         executor.submit(producer);
-        executor.submit(cosumer);
+        executor.submit(consumer);
 
         try {
             Thread.sleep(30 * 1000L);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException ignored) {
         }
 
         mutex.set(false);
         try {
             latch.await();
-        } catch (InterruptedException e) {
+        } catch (InterruptedException ignored) {
         }
         executor.shutdown();
 
-        List<Long> result = cosumer.getResult();
+        List<Long> result = consumer.getResult();
 
-        Long last = -1L;
-        for (Long offest : result) {
-            Assert.assertTrue(last + 1 == offest);// 取出来的数据一定是递增的
-            last = offest;
+        long last = -1L;
+        for (Long offset : result) {
+            Assert.assertEquals(last + 1, (long) offset);// 取出来的数据一定是递增的
+            last = offset;
         }
     }
 
     class Producer implements Runnable {
 
-        private BooleanMutex mutex;
-        private int          freq;
+        private final BooleanMutex mutex;
+        private final int freq;
 
-        public Producer(BooleanMutex mutex, int freq){
+        public Producer(BooleanMutex mutex, int freq) {
             this.mutex = mutex;
             this.freq = freq;
         }
 
         public void run() {
-            long offest = 0;
+            long offset = 0;
             while (true) {
                 try {
                     mutex.get();
@@ -100,7 +100,7 @@ public class MemoryEventStoreMultiThreadTest extends MemoryEventStoreBase {
                 } catch (InterruptedException e) {
                     return;
                 }
-                Event event = buildEvent("1", offest++, 1L);
+                Event event = buildEvent("1", offset++, 1L);
 
                 try {
                     Thread.sleep(RandomUtils.nextInt(freq));
@@ -109,20 +109,20 @@ public class MemoryEventStoreMultiThreadTest extends MemoryEventStoreBase {
                 }
                 try {
                     eventStore.put(event);
-                } catch (CanalStoreException | InterruptedException e) {
+                } catch (CanalStoreException | InterruptedException ignored) {
                 }
             }
         }
     }
 
-    class Cosumer implements Runnable {
+    class Consumer implements Runnable {
 
-        private CountDownLatch latch;
-        private int            freq;
-        private int            batchSize;
-        private List<Long>     result = new ArrayList<>();
+        private final CountDownLatch latch;
+        private final int freq;
+        private final int batchSize;
+        private final List<Long> result = new ArrayList<>();
 
-        public Cosumer(CountDownLatch latch, int freq, int batchSize){
+        public Consumer(CountDownLatch latch, int freq, int batchSize) {
             this.latch = latch;
             this.freq = freq;
             this.batchSize = batchSize;
@@ -146,30 +146,27 @@ public class MemoryEventStoreMultiThreadTest extends MemoryEventStoreBase {
             while (emptyCount < 10) {
                 try {
                     Thread.sleep(RandomUtils.nextInt(freq));
-                } catch (InterruptedException e) {
+                } catch (InterruptedException ignored) {
                 }
 
                 try {
-                    Events<Event> entrys = eventStore.get(first, batchSize, 1000L, TimeUnit.MILLISECONDS);
-                    // Events<Event> entrys = eventStore.tryGet(first,
-                    // batchSize);
-                    if (!CollectionUtils.isEmpty(entrys.getEvents())) {
-                        if (entrys.getEvents().size() != batchSize) {
-                            System.out.println("get size:" + entrys.getEvents().size() + " with not full batchSize:"
-                                               + batchSize);
+                    Events<Event> entries = eventStore.get(first, batchSize, 1000L, TimeUnit.MILLISECONDS);
+
+                    if (!CollectionUtils.isEmpty(entries.getEvents())) {
+                        if (entries.getEvents().size() != batchSize) {
+                            System.out.println("get size:" + entries.getEvents().size() + " with not full batchSize:" + batchSize);
                         }
 
-                        first = entrys.getPositionRange().getEnd();
-                        for (Event event : entrys.getEvents()) {
+                        first = entries.getPositionRange().getEnd();
+                        for (Event event : entries.getEvents()) {
                             this.result.add(event.getPosition());
                         }
                         emptyCount = 0;
 
-                        System.out.println("offest : " + entrys.getEvents().get(0).getPosition() + " , count :"
-                                           + entrys.getEvents().size());
+                        System.out.println("offset : " + entries.getEvents().get(0).getPosition() + " , count :" + entries.getEvents().size());
                         ackCount++;
                         if (ackCount == 1) {
-                            eventStore.cleanUntil(entrys.getPositionRange().getEnd());
+                            eventStore.cleanUntil(entries.getPositionRange().getEnd());
                             System.out.println("first position : " + eventStore.getFirstPosition());
                             ackCount = 0;
                         }
