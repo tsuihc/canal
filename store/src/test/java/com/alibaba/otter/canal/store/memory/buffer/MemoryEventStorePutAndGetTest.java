@@ -10,7 +10,7 @@ import org.junit.Test;
 import com.alibaba.otter.canal.protocol.position.Position;
 import com.alibaba.otter.canal.store.CanalStoreException;
 import com.alibaba.otter.canal.store.helper.CanalEventUtils;
-import com.alibaba.otter.canal.store.memory.MemoryEventStoreWithBuffer;
+import com.alibaba.otter.canal.store.memory.ConcurrentMemoryEventStoreWithBuffer;
 import com.alibaba.otter.canal.store.model.Event;
 import com.alibaba.otter.canal.store.model.Events;
 
@@ -24,7 +24,7 @@ public class MemoryEventStorePutAndGetTest extends MemoryEventStoreBase {
 
     @Test
     public void testOnePut() {
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.start();
         // 尝试阻塞
         try {
@@ -50,7 +50,7 @@ public class MemoryEventStorePutAndGetTest extends MemoryEventStoreBase {
     @Test
     public void testFullPut() {
         int bufferSize = 16;
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.setBufferSize(bufferSize);
         eventStore.start();
 
@@ -75,7 +75,7 @@ public class MemoryEventStorePutAndGetTest extends MemoryEventStoreBase {
 
     @Test
     public void testOnePutOneGet() {
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.start();
 
         boolean result = eventStore.tryPut(buildEvent("1", 1L, 1L));
@@ -93,7 +93,7 @@ public class MemoryEventStorePutAndGetTest extends MemoryEventStoreBase {
     @Test
     public void testFullPutBatchGet() {
         int bufferSize = 16;
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.setBufferSize(bufferSize);
         eventStore.start();
 
@@ -123,7 +123,7 @@ public class MemoryEventStorePutAndGetTest extends MemoryEventStoreBase {
 
     @Test
     public void testBlockPutOneGet() {
-        final MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        final ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.start();
 
         final int batchSize = 10;

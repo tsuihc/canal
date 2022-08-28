@@ -58,7 +58,7 @@
 		<property name="period" value="${canal.file.flush.period:1000}" />
 	</bean>
 	
-	<bean id="eventStore" class="com.alibaba.otter.canal.store.memory.MemoryEventStoreWithBuffer">
+	<bean id="eventStore" class="com.alibaba.otter.canal.store.memory.ConcurrentMemoryEventStoreWithBuffer">
 		<property name="bufferSize" value="${canal.instance.memory.buffer.size:16384}" />
 		<property name="bufferMemUnit" value="${canal.instance.memory.buffer.memunit:1024}" />
 		<property name="batchMode" value="${canal.instance.memory.batch.mode:MEMSIZE}" />

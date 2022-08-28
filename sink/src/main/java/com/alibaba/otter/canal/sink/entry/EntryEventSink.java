@@ -20,7 +20,7 @@ import com.alibaba.otter.canal.sink.CanalEventDownStreamHandler;
 import com.alibaba.otter.canal.sink.CanalEventSink;
 import com.alibaba.otter.canal.sink.exception.CanalSinkException;
 import com.alibaba.otter.canal.store.CanalEventStore;
-import com.alibaba.otter.canal.store.memory.MemoryEventStoreWithBuffer;
+import com.alibaba.otter.canal.store.memory.ConcurrentMemoryEventStoreWithBuffer;
 import com.alibaba.otter.canal.store.model.Event;
 
 /**
@@ -54,8 +54,8 @@ public class EntryEventSink extends AbstractCanalEventSink<List<CanalEntry.Entry
         super.start();
         Assert.notNull(eventStore);
 
-        if (eventStore instanceof MemoryEventStoreWithBuffer) {
-            this.raw = ((MemoryEventStoreWithBuffer) eventStore).isRaw();
+        if (eventStore instanceof ConcurrentMemoryEventStoreWithBuffer) {
+            this.raw = ((ConcurrentMemoryEventStoreWithBuffer) eventStore).isRaw();
         }
 
         for (CanalEventDownStreamHandler handler : getHandlers()) {

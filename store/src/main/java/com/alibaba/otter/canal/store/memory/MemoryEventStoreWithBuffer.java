@@ -1,16 +1,6 @@
 package com.alibaba.otter.canal.store.memory;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.ReentrantLock;
-
-import org.apache.commons.lang.StringUtils;
-
 import com.alibaba.otter.canal.protocol.CanalEntry;
-import com.alibaba.otter.canal.protocol.CanalEntry.EventType;
 import com.alibaba.otter.canal.protocol.position.LogPosition;
 import com.alibaba.otter.canal.protocol.position.Position;
 import com.alibaba.otter.canal.protocol.position.PositionRange;
@@ -22,252 +12,180 @@ import com.alibaba.otter.canal.store.helper.CanalEventUtils;
 import com.alibaba.otter.canal.store.model.BatchMode;
 import com.alibaba.otter.canal.store.model.Event;
 import com.alibaba.otter.canal.store.model.Events;
+import org.apache.commons.lang.StringUtils;
 
-/**
- * 基于内存buffer构建内存memory store
- * 
- * <pre>
- * 变更记录：
- * 1. 新增BatchMode类型，支持按内存大小获取批次数据，内存大小更加可控.
- *   a. put操作，会首先根据bufferSize进行控制，然后再进行bufferSize * bufferMemUnit进行控制. 因存储的内容是以Event，如果纯依赖于memsize进行控制，会导致RingBuffer出现动态伸缩
- * </pre>
- * 
- * @author jianghang 2012-6-20 上午09:46:31
- * @version 1.0.0
- */
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+
 public class MemoryEventStoreWithBuffer extends AbstractCanalStoreScavenge implements CanalEventStore<Event>, CanalStoreScavenge {
 
     protected static final long INIT_SEQUENCE = -1;
-    protected int               bufferSize    = 16 * 1024;
-    protected int               bufferMemUnit = 1024;                                      // memsize的单位，默认为1kb大小
-    protected int               indexMask;
-    protected Event[]           buffer;
+    protected int bufferSize = 16 * 1024;
+    protected long bufferMemUnit = 1024L;                                         // memorySize的单位，默认为1kb大小
+    protected int indexMask;
+    protected Event[] buffer;
 
     // 记录下put/get/ack操作的三个下标
-    protected AtomicLong        putSequence   = new AtomicLong(INIT_SEQUENCE);             // 代表当前put操作最后一次写操作发生的位置
-    protected AtomicLong        getSequence   = new AtomicLong(INIT_SEQUENCE);             // 代表当前get操作读取的最后一条的位置
-    protected AtomicLong        ackSequence   = new AtomicLong(INIT_SEQUENCE);             // 代表当前ack操作的最后一条的位置
+    protected AtomicLong putSequence = new AtomicLong(INIT_SEQUENCE);             // 代表当前put操作最后一次写操作发生的位置
+    protected AtomicLong getSequence = new AtomicLong(INIT_SEQUENCE);             // 代表当前get操作读取的最后一条的位置
+    protected AtomicLong ackSequence = new AtomicLong(INIT_SEQUENCE);             // 代表当前ack操作的最后一条的位置
 
-    // 记录下put/get/ack操作的三个memsize大小
-    protected AtomicLong        putMemSize    = new AtomicLong(0);
-    protected AtomicLong        getMemSize    = new AtomicLong(0);
-    protected AtomicLong        ackMemSize    = new AtomicLong(0);
+    // 记录下put/get/ack操作的三个memorySize大小
+    protected AtomicLong putMemorySize = new AtomicLong(0);
+    protected AtomicLong getMemorySize = new AtomicLong(0);
+    protected AtomicLong ackMemorySize = new AtomicLong(0);
 
     // 记录下put/get/ack操作的三个execTime
-    protected AtomicLong        putExecTime   = new AtomicLong(System.currentTimeMillis());
-    protected AtomicLong        getExecTime   = new AtomicLong(System.currentTimeMillis());
-    protected AtomicLong        ackExecTime   = new AtomicLong(System.currentTimeMillis());
+    protected AtomicLong putExecTime = new AtomicLong(System.currentTimeMillis());
+    protected AtomicLong getExecTime = new AtomicLong(System.currentTimeMillis());
+    protected AtomicLong ackExecTime = new AtomicLong(System.currentTimeMillis());
 
     // 记录下put/get/ack操作的三个table rows
-    protected AtomicLong        putTableRows  = new AtomicLong(0);
-    protected AtomicLong        getTableRows  = new AtomicLong(0);
-    protected AtomicLong        ackTableRows  = new AtomicLong(0);
+    protected AtomicLong putTableRows = new AtomicLong(0);
+    protected AtomicLong getTableRows = new AtomicLong(0);
+    protected AtomicLong ackTableRows = new AtomicLong(0);
 
-    // 阻塞put/get操作控制信号
-    protected ReentrantLock     lock          = new ReentrantLock();
-    protected Condition         notFull       = lock.newCondition();
-    protected Condition         notEmpty      = lock.newCondition();
+    protected BatchMode batchMode = BatchMode.ITEMSIZE;                        // 默认为内存大小模式
+    protected boolean ddlIsolation = false;
+    protected boolean raw = true;                                              // 针对entry是否开启raw模式
 
-    protected BatchMode         batchMode     = BatchMode.ITEMSIZE;                        // 默认为内存大小模式
-    protected boolean           ddlIsolation  = false;
-    protected boolean           raw           = true;                                      // 针对entry是否开启raw模式
-
-    public MemoryEventStoreWithBuffer(){
-
+    public MemoryEventStoreWithBuffer() {
     }
 
-    public MemoryEventStoreWithBuffer(BatchMode batchMode){
+    public MemoryEventStoreWithBuffer(BatchMode batchMode) {
         this.batchMode = batchMode;
     }
 
-    public void start() throws CanalStoreException {
+    @Override
+    public void start() {
         super.start();
         if (Integer.bitCount(bufferSize) != 1) {
-            throw new IllegalArgumentException("bufferSize must be a power of 2");
+            throw new IllegalArgumentException("The size of buffer must be a power of 2");
         }
-
         indexMask = bufferSize - 1;
         buffer = new Event[bufferSize];
     }
 
-    public void stop() throws CanalStoreException {
+    @Override
+    public void stop() {
         super.stop();
-
         cleanAll();
     }
 
+    @Override
     public void put(List<Event> data) throws InterruptedException, CanalStoreException {
         if (data == null || data.isEmpty()) {
             return;
         }
-
-        final ReentrantLock lock = this.lock;
-        lock.lockInterruptibly();
-        try {
-            try {
-                while (!checkFreeSlotAt(putSequence.get() + data.size())) { // 检查是否有空位
-                    notFull.await(); // wait until not full
-                }
-            } catch (InterruptedException ie) {
-                notFull.signal(); // propagate to non-interrupted thread
-                throw ie;
-            }
-            doPut(data);
+        do {
             if (Thread.interrupted()) {
                 throw new InterruptedException();
             }
-        } finally {
-            lock.unlock();
-        }
+        } while (!checkFreeSlotAt(putSequence.get() + data.size()));
+        doPut(data);
     }
 
+    @Override
     public boolean put(List<Event> data, long timeout, TimeUnit unit) throws InterruptedException, CanalStoreException {
         if (data == null || data.isEmpty()) {
             return true;
         }
-
         long nanos = unit.toNanos(timeout);
-        final ReentrantLock lock = this.lock;
-        lock.lockInterruptibly();
-        try {
-            for (;;) {
-                if (checkFreeSlotAt(putSequence.get() + data.size())) {
-                    doPut(data);
-                    return true;
-                }
-                if (nanos <= 0) {
-                    return false;
-                }
-
-                try {
-                    nanos = notFull.awaitNanos(nanos);
-                } catch (InterruptedException ie) {
-                    notFull.signal(); // propagate to non-interrupted thread
-                    throw ie;
-                }
+        for (; ; ) {
+            long startNanos = System.nanoTime();
+            if (checkFreeSlotAt(putSequence.get() + data.size())) {
+                doPut(data);
+                return true;
             }
-        } finally {
-            lock.unlock();
+            nanos -= (System.nanoTime() - startNanos);
+            if (nanos <= 0) {
+                return false;
+            }
         }
     }
 
+    @Override
     public boolean tryPut(List<Event> data) throws CanalStoreException {
         if (data == null || data.isEmpty()) {
             return true;
         }
-
-        final ReentrantLock lock = this.lock;
-        lock.lock();
-        try {
-            if (!checkFreeSlotAt(putSequence.get() + data.size())) {
-                return false;
-            } else {
-                doPut(data);
-                return true;
-            }
-        } finally {
-            lock.unlock();
+        if (!checkFreeSlotAt(putSequence.get() + data.size())) {
+            return false;
+        } else {
+            doPut(data);
+            return true;
         }
     }
 
+    @Override
     public void put(Event data) throws InterruptedException, CanalStoreException {
         put(Collections.singletonList(data));
     }
 
+    @Override
     public boolean put(Event data, long timeout, TimeUnit unit) throws InterruptedException, CanalStoreException {
         return put(Collections.singletonList(data), timeout, unit);
     }
 
+    @Override
     public boolean tryPut(Event data) throws CanalStoreException {
         return tryPut(Collections.singletonList(data));
     }
 
-    /**
-     * 执行具体的put操作
-     */
-    private void doPut(List<Event> data) {
+    protected void doPut(List<Event> data) {
         long current = putSequence.get();
         long end = current + data.size();
 
-        // 先写数据，再更新对应的cursor,并发度高的情况，putSequence会被get请求可见，拿出了ringbuffer中的老的Entry值
+        // 先写数据，再更新对应的cursor,并发度高的情况，putSequence会被get请求可见，拿出了ring buffer中的老的Entry值
         for (long next = current + 1; next <= end; next++) {
             buffer[getIndex(next)] = data.get((int) (next - current - 1));
         }
-
         putSequence.set(end);
-
-        // 记录一下gets memsize信息，方便快速检索
+        // 记录一下gets memorySize信息，方便快速检索
         if (batchMode.isMemSize()) {
             long size = 0;
             for (Event event : data) {
                 size += calculateSize(event);
             }
-
-            putMemSize.getAndAdd(size);
+            putMemorySize.getAndAdd(size);
         }
         profiling(data, OP.PUT);
-        // tell other threads that store is not empty
-        notEmpty.signal();
     }
 
+    @Override
     public Events<Event> get(Position start, int batchSize) throws InterruptedException, CanalStoreException {
-        final ReentrantLock lock = this.lock;
-        lock.lockInterruptibly();
-        try {
-            try {
-                while (!checkUnGetSlotAt((LogPosition) start, batchSize))
-                    notEmpty.await();
-            } catch (InterruptedException ie) {
-                notEmpty.signal(); // propagate to non-interrupted thread
-                throw ie;
+        do {
+            if (Thread.interrupted()) {
+                throw new InterruptedException();
             }
-
-            return doGet(start, batchSize);
-        } finally {
-            lock.unlock();
-        }
+        } while (!checkUnGetSlotAt((LogPosition) start, batchSize));
+        return doGet(start, batchSize);
     }
 
-    public Events<Event> get(Position start, int batchSize, long timeout, TimeUnit unit) throws InterruptedException,
-                                                                                        CanalStoreException {
+    @Override
+    public Events<Event> get(Position start, int batchSize, long timeout, TimeUnit unit) throws InterruptedException, CanalStoreException {
         long nanos = unit.toNanos(timeout);
-        final ReentrantLock lock = this.lock;
-        lock.lockInterruptibly();
-        try {
-            for (;;) {
-                if (checkUnGetSlotAt((LogPosition) start, batchSize)) {
-                    return doGet(start, batchSize);
-                }
-
-                if (nanos <= 0) {
-                    // 如果时间到了，有多少取多少
-                    return doGet(start, batchSize);
-                }
-
-                try {
-                    nanos = notEmpty.awaitNanos(nanos);
-                } catch (InterruptedException ie) {
-                    notEmpty.signal(); // propagate to non-interrupted thread
-                    throw ie;
-                }
-
+        for (; ; ) {
+            long startNanos = System.nanoTime();
+            if (checkUnGetSlotAt((LogPosition) start, batchSize)) {
+                return doGet(start, batchSize);
             }
-        } finally {
-            lock.unlock();
+            nanos -= (System.nanoTime() - startNanos);
+            if (nanos <= 0) {
+                // 如果时间到了，有多少取多少
+                return doGet(start, batchSize);
+            }
         }
     }
 
+    @Override
     public Events<Event> tryGet(Position start, int batchSize) throws CanalStoreException {
-        final ReentrantLock lock = this.lock;
-        lock.lock();
-        try {
-            return doGet(start, batchSize);
-        } finally {
-            lock.unlock();
-        }
+        return doGet(start, batchSize);
     }
 
-    private Events<Event> doGet(Position start, int batchSize) throws CanalStoreException {
+    protected Events<Event> doGet(Position start, int batchSize) throws CanalStoreException {
         LogPosition startPosition = (LogPosition) start;
 
         long current = getSequence.get();
@@ -285,9 +203,9 @@ public class MemoryEventStoreWithBuffer extends AbstractCanalStoreScavenge imple
 
         Events<Event> result = new Events<>();
         List<Event> entries = result.getEvents();
-        long memsize = 0;
+        long memorySize = 0;
         if (batchMode.isItemSize()) {
-            end = (next + batchSize - 1) < maxAbleSequence ? (next + batchSize - 1) : maxAbleSequence;
+            end = Math.min((next + batchSize - 1), maxAbleSequence);
             // 提取数据并返回
             for (; next <= end; next++) {
                 Event event = buffer[getIndex(next)];
@@ -306,8 +224,8 @@ public class MemoryEventStoreWithBuffer extends AbstractCanalStoreScavenge imple
                 }
             }
         } else {
-            long maxMemSize = batchSize * bufferMemUnit;
-            for (; memsize <= maxMemSize && next <= maxAbleSequence; next++) {
+            long maxMemorySize = batchSize * bufferMemUnit;
+            for (; memorySize <= maxMemorySize && next <= maxAbleSequence; next++) {
                 // 永远保证可以取出第一条的记录，避免死锁
                 Event event = buffer[getIndex(next)];
                 if (ddlIsolation && isDdl(event.getEventType())) {
@@ -322,7 +240,7 @@ public class MemoryEventStoreWithBuffer extends AbstractCanalStoreScavenge imple
                     break;
                 } else {
                     entries.add(event);
-                    memsize += calculateSize(event);
+                    memorySize += calculateSize(event);
                     end = next;// 记录end位点
                 }
             }
@@ -349,8 +267,7 @@ public class MemoryEventStoreWithBuffer extends AbstractCanalStoreScavenge imple
         }
 
         if (getSequence.compareAndSet(current, end)) {
-            getMemSize.addAndGet(memsize);
-            notFull.signal();
+            getMemorySize.addAndGet(memorySize);
             profiling(result.getEvents(), OP.GET);
             return result;
         } else {
@@ -358,62 +275,54 @@ public class MemoryEventStoreWithBuffer extends AbstractCanalStoreScavenge imple
         }
     }
 
-    public LogPosition getFirstPosition() throws CanalStoreException {
-        final ReentrantLock lock = this.lock;
-        lock.lock();
-        try {
-            long firstSequence = ackSequence.get();
-            if (firstSequence == INIT_SEQUENCE && firstSequence < putSequence.get()) {
-                // 没有ack过数据
-                Event event = buffer[getIndex(firstSequence + 1)]; // 最后一次ack为-1，需要移动到下一条,included
-                                                                     // = false
-                return CanalEventUtils.createPosition(event, false);
-            } else if (firstSequence > INIT_SEQUENCE && firstSequence < putSequence.get()) {
-                // ack未追上put操作
-                Event event = buffer[getIndex(firstSequence)]; // 最后一次ack的位置数据,需要移动到下一条,included
-                // = false
-                return CanalEventUtils.createPosition(event, false);
-            } else if (firstSequence > INIT_SEQUENCE && firstSequence == putSequence.get()) {
-                // 已经追上，store中没有数据
-                Event event = buffer[getIndex(firstSequence)]; // 最后一次ack的位置数据，和last为同一条，included
-                                                                 // = false
-                return CanalEventUtils.createPosition(event, false);
-            } else {
-                // 没有任何数据
-                return null;
-            }
-        } finally {
-            lock.unlock();
+    @Override
+    public Position getFirstPosition() throws CanalStoreException {
+        long firstSequence = ackSequence.get();
+        if (firstSequence == INIT_SEQUENCE && firstSequence < putSequence.get()) {
+            // 没有ack过数据
+            Event event = buffer[getIndex(firstSequence + 1)]; // 最后一次ack为-1，需要移动到下一条,included
+            // = false
+            return CanalEventUtils.createPosition(event, false);
+        } else if (firstSequence > INIT_SEQUENCE && firstSequence < putSequence.get()) {
+            // ack未追上put操作
+            Event event = buffer[getIndex(firstSequence)]; // 最后一次ack的位置数据,需要移动到下一条,included
+            // = false
+            return CanalEventUtils.createPosition(event, false);
+        } else if (firstSequence > INIT_SEQUENCE && firstSequence == putSequence.get()) {
+            // 已经追上，store中没有数据
+            Event event = buffer[getIndex(firstSequence)]; // 最后一次ack的位置数据，和last为同一条，included
+            // = false
+            return CanalEventUtils.createPosition(event, false);
+        } else {
+            // 没有任何数据
+            return null;
         }
     }
 
-    public LogPosition getLatestPosition() throws CanalStoreException {
-        final ReentrantLock lock = this.lock;
-        lock.lock();
-        try {
-            long latestSequence = putSequence.get();
-            if (latestSequence > INIT_SEQUENCE && latestSequence != ackSequence.get()) {
-                Event event = buffer[(int) putSequence.get() & indexMask]; // 最后一次写入的数据，最后一条未消费的数据
-                return CanalEventUtils.createPosition(event, true);
-            } else if (latestSequence > INIT_SEQUENCE && latestSequence == ackSequence.get()) {
-                // ack已经追上了put操作
-                Event event = buffer[(int) putSequence.get() & indexMask]; // 最后一次写入的数据，included
-                                                                            // =
-                                                                            // false
-                return CanalEventUtils.createPosition(event, false);
-            } else {
-                // 没有任何数据
-                return null;
-            }
-        } finally {
-            lock.unlock();
+    @Override
+    public Position getLatestPosition() throws CanalStoreException {
+        long latestSequence = putSequence.get();
+        if (latestSequence > INIT_SEQUENCE && latestSequence != ackSequence.get()) {
+            Event event = buffer[(int) putSequence.get() & indexMask]; // 最后一次写入的数据，最后一条未消费的数据
+            return CanalEventUtils.createPosition(event, true);
+        } else if (latestSequence > INIT_SEQUENCE && latestSequence == ackSequence.get()) {
+            // ack已经追上了put操作
+            Event event = buffer[(int) putSequence.get() & indexMask]; // 最后一次写入的数据，included
+            // =
+            // false
+            return CanalEventUtils.createPosition(event, false);
+        } else {
+            // 没有任何数据
+            return null;
         }
     }
 
+    @Override
     public void ack(Position position) throws CanalStoreException {
         cleanUntil(position, -1L);
     }
 
+    @Override
     public void ack(Position position, Long seqId) throws CanalStoreException {
         cleanUntil(position, seqId);
     }
@@ -423,130 +332,95 @@ public class MemoryEventStoreWithBuffer extends AbstractCanalStoreScavenge imple
         cleanUntil(position, -1L);
     }
 
-    public void cleanUntil(Position position, Long seqId) throws CanalStoreException {
-        final ReentrantLock lock = this.lock;
-        lock.lock();
-        try {
-            long sequence = ackSequence.get();
-            long maxSequence = getSequence.get();
+    protected void cleanUntil(Position position, Long seqId) throws CanalStoreException {
+        long sequence = ackSequence.get();
+        long maxSequence = getSequence.get();
 
-            boolean hasMatch = false;
-            long memsize = 0;
-            // ack没有list，但有已存在的foreach，还是节省一下list的开销
-            long localExecTime = 0L;
-            int deltaRows = 0;
-            if (seqId > 0) {
-                maxSequence = seqId;
+        boolean hasMatch = false;
+        long memorySize = 0;
+        // ack没有list，但有已存在的foreach，还是节省一下list的开销
+        long localExecTime = 0L;
+        int deltaRows = 0;
+        if (seqId > 0) {
+            maxSequence = seqId;
+        }
+        for (long next = sequence + 1; next <= maxSequence; next++) {
+            Event event = buffer[getIndex(next)];
+            if (localExecTime == 0 && event.getExecuteTime() > 0) {
+                localExecTime = event.getExecuteTime();
             }
-            for (long next = sequence + 1; next <= maxSequence; next++) {
-                Event event = buffer[getIndex(next)];
-                if (localExecTime == 0 && event.getExecuteTime() > 0) {
-                    localExecTime = event.getExecuteTime();
-                }
-                deltaRows += event.getRowsCount();
-                memsize += calculateSize(event);
-                if ((seqId < 0 || next == seqId) && CanalEventUtils.checkPosition(event, (LogPosition) position)) {
-                    // 找到对应的position，更新ack seq
-                    hasMatch = true;
+            deltaRows += event.getRowsCount();
+            memorySize += calculateSize(event);
+            if ((seqId < 0 || next == seqId) && CanalEventUtils.checkPosition(event, (LogPosition) position)) {
+                // 找到对应的position，更新ack seq
+                hasMatch = true;
 
-                    if (batchMode.isMemSize()) {
-                        ackMemSize.addAndGet(memsize);
-                        // 尝试清空buffer中的内存，将ack之前的内存全部释放掉
-                        for (long index = sequence + 1; index < next; index++) {
-                            buffer[getIndex(index)] = null;// 设置为null
-                        }
-
-                        // 考虑getFirstPosition/getLastPosition会获取最后一次ack的position信息
-                        // ack清理的时候只处理entry=null，释放内存
-                        Event lastEvent = buffer[getIndex(next)];
-                        lastEvent.setEntry(null);
-                        lastEvent.setRawEntry(null);
+                if (batchMode.isMemSize()) {
+                    ackMemorySize.addAndGet(memorySize);
+                    // 尝试清空buffer中的内存，将ack之前的内存全部释放掉
+                    for (long index = sequence + 1; index < next; index++) {
+                        buffer[getIndex(index)] = null;// 设置为null
                     }
 
-                    if (ackSequence.compareAndSet(sequence, next)) {// 避免并发ack
-                        notFull.signal();
-                        ackTableRows.addAndGet(deltaRows);
-                        if (localExecTime > 0) {
-                            ackExecTime.lazySet(localExecTime);
-                        }
-                        return;
+                    // 考虑getFirstPosition/getLastPosition会获取最后一次ack的position信息
+                    // ack清理的时候只处理entry=null，释放内存
+                    Event lastEvent = buffer[getIndex(next)];
+                    lastEvent.setEntry(null);
+                    lastEvent.setRawEntry(null);
+                }
+
+                if (ackSequence.compareAndSet(sequence, next)) {// 避免并发ack
+                    ackTableRows.addAndGet(deltaRows);
+                    if (localExecTime > 0) {
+                        ackExecTime.lazySet(localExecTime);
                     }
+                    return;
                 }
             }
-            if (!hasMatch) {// 找不到对应需要ack的position
-                throw new CanalStoreException("no match ack position" + position.toString());
-            }
-        } finally {
-            lock.unlock();
+        }
+        if (!hasMatch) {// 找不到对应需要ack的position
+            throw new CanalStoreException("no match ack position" + position.toString());
         }
     }
 
+    @Override
     public void rollback() throws CanalStoreException {
-        final ReentrantLock lock = this.lock;
-        lock.lock();
-        try {
-            getSequence.set(ackSequence.get());
-            getMemSize.set(ackMemSize.get());
-        } finally {
-            lock.unlock();
-        }
+        getSequence.set(ackSequence.get());
+        getMemorySize.set(ackMemorySize.get());
     }
 
+    @Override
     public void cleanAll() throws CanalStoreException {
-        final ReentrantLock lock = this.lock;
-        lock.lock();
-        try {
-            putSequence.set(INIT_SEQUENCE);
-            getSequence.set(INIT_SEQUENCE);
-            ackSequence.set(INIT_SEQUENCE);
+        putSequence.set(INIT_SEQUENCE);
+        getSequence.set(INIT_SEQUENCE);
+        ackSequence.set(INIT_SEQUENCE);
 
-            putMemSize.set(0);
-            getMemSize.set(0);
-            ackMemSize.set(0);
-            buffer = null;
-            // for (int i = 0; i < entries.length; i++) {
-            // entries[i] = null;
-            // }
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    // =================== helper method =================
-
-    private long getMinimumGetOrAck() {
-        long get = getSequence.get();
-        long ack = ackSequence.get();
-        return ack <= get ? ack : get;
+        putMemorySize.set(0);
+        getMemorySize.set(0);
+        ackMemorySize.set(0);
+        buffer = null;
     }
 
     /**
-     * 查询是否有空位
+     * 检查Buffer指定位点是否为空
      */
     protected boolean checkFreeSlotAt(final long sequence) {
-        final long wrapPoint = sequence - bufferSize;
-        final long minPoint = getMinimumGetOrAck();
-        if (wrapPoint > minPoint) { // 刚好追上一轮
+        long wrapPoint = sequence - bufferSize;
+        long minPoint = Math.min(getSequence.get(), ackSequence.get());
+        if (wrapPoint > minPoint) {
             return false;
-        } else {
-            // 在bufferSize模式上，再增加memSize控制
-            if (batchMode.isMemSize()) {
-                final long memsize = putMemSize.get() - ackMemSize.get();
-                if (memsize < bufferSize * bufferMemUnit) {
-                    return true;
-                } else {
-                    return false;
-                }
-            } else {
-                return true;
-            }
         }
+        if (batchMode.isMemSize()) {
+            long memorySize = putMemorySize.get() - ackMemorySize.get();
+            return memorySize < bufferSize * bufferMemUnit;
+        }
+        return true;
     }
 
     /**
      * 检查是否存在需要get的数据,并且数量>=batchSize
      */
-    private boolean checkUnGetSlotAt(LogPosition startPosition, int batchSize) {
+    protected boolean checkUnGetSlotAt(LogPosition startPosition, int batchSize) {
         if (batchMode.isItemSize()) {
             long current = getSequence.get();
             long maxAbleSequence = putSequence.get();
@@ -555,37 +429,30 @@ public class MemoryEventStoreWithBuffer extends AbstractCanalStoreScavenge imple
                 next = next + 1;// 少一条数据
             }
 
-            if (current < maxAbleSequence && next + batchSize - 1 <= maxAbleSequence) {
-                return true;
-            } else {
-                return false;
-            }
+            return current < maxAbleSequence && next + batchSize - 1 <= maxAbleSequence;
         } else {
             // 处理内存大小判断
-            long currentSize = getMemSize.get();
-            long maxAbleSize = putMemSize.get();
+            long currentSize = getMemorySize.get();
+            long maxAbleSize = putMemorySize.get();
 
-            if (maxAbleSize - currentSize >= batchSize * bufferMemUnit) {
-                return true;
-            } else {
-                return false;
-            }
+            return maxAbleSize - currentSize >= batchSize * bufferMemUnit;
         }
     }
+
 
     private long calculateSize(Event event) {
         // 直接返回binlog中的事件大小
         return event.getRawLength();
     }
 
-    private int getIndex(long sequcnce) {
-        return (int) sequcnce & indexMask;
+    private int getIndex(long sequence) {
+        return (int) sequence & indexMask;
     }
 
-    private boolean isDdl(EventType type) {
-        return type == EventType.ALTER || type == EventType.CREATE || type == EventType.ERASE
-               || type == EventType.RENAME || type == EventType.TRUNCATE || type == EventType.CINDEX
-               || type == EventType.DINDEX;
+    private boolean isDdl(CanalEntry.EventType type) {
+        return type == CanalEntry.EventType.ALTER || type == CanalEntry.EventType.CREATE || type == CanalEntry.EventType.ERASE
+               || type == CanalEntry.EventType.RENAME || type == CanalEntry.EventType.TRUNCATE || type == CanalEntry.EventType.CINDEX
+               || type == CanalEntry.EventType.DINDEX;
     }
 
     private void profiling(List<Event> events, OP op) {
@@ -664,12 +531,12 @@ public class MemoryEventStoreWithBuffer extends AbstractCanalStoreScavenge imple
         return ackSequence;
     }
 
-    public AtomicLong getPutMemSize() {
-        return putMemSize;
+    public AtomicLong getPutMemorySize() {
+        return putMemorySize;
     }
 
-    public AtomicLong getAckMemSize() {
-        return ackMemSize;
+    public AtomicLong getAckMemorySize() {
+        return ackMemorySize;
     }
 
     public BatchMode getBatchMode() {
@@ -701,3 +568,4 @@ public class MemoryEventStoreWithBuffer extends AbstractCanalStoreScavenge imple
     }
 
 }
+

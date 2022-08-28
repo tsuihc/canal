@@ -2,6 +2,8 @@ package com.alibaba.otter.canal.store.memory.buffer;
 
 import java.net.InetSocketAddress;
 
+import com.alibaba.otter.canal.store.CanalEventStore;
+import com.alibaba.otter.canal.store.memory.MemoryEventStoreWithBuffer;
 import org.junit.Assert;
 
 import com.alibaba.otter.canal.protocol.CanalEntry.Entry;
@@ -34,16 +36,17 @@ public class MemoryEventStoreBase {
         return new Event(new LogIdentity(new InetSocketAddress(MYSQL_ADDRESS, 3306), 1234L), entry);
     }
 
-    protected Event buildEvent(String binlogFile, long offset, long timestamp, long eventLenght) {
+    protected Event buildEvent(String binlogFile, long offset, long timestamp, long eventLength) {
         Header.Builder headerBuilder = Header.newBuilder();
         headerBuilder.setLogfileName(binlogFile);
         headerBuilder.setLogfileOffset(offset);
         headerBuilder.setExecuteTime(timestamp);
-        headerBuilder.setEventLength(eventLenght);
+        headerBuilder.setEventLength(eventLength);
         Entry.Builder entryBuilder = Entry.newBuilder();
         entryBuilder.setHeader(headerBuilder.build());
         Entry entry = entryBuilder.build();
 
         return new Event(new LogIdentity(new InetSocketAddress(MYSQL_ADDRESS, 3306), 1234L), entry);
     }
+
 }

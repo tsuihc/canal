@@ -6,6 +6,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import com.alibaba.otter.canal.store.memory.MemoryEventStoreWithBuffer;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -13,16 +14,16 @@ import org.junit.Test;
 import com.alibaba.otter.canal.protocol.position.Position;
 import com.alibaba.otter.canal.store.CanalStoreException;
 import com.alibaba.otter.canal.store.helper.CanalEventUtils;
-import com.alibaba.otter.canal.store.memory.MemoryEventStoreWithBuffer;
+import com.alibaba.otter.canal.store.memory.ConcurrentMemoryEventStoreWithBuffer;
 import com.alibaba.otter.canal.store.model.BatchMode;
 import com.alibaba.otter.canal.store.model.Event;
 import com.alibaba.otter.canal.store.model.Events;
 
-public class MemoryEventStoreMemBatchTest extends MemoryEventStoreBase {
+public abstract class MemoryEventStoreMemBatchTest extends MemoryEventStoreBase {
 
     @Test
     public void testOnePut() {
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        MemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.setBatchMode(BatchMode.MEMSIZE);
         eventStore.start();
         // 尝试阻塞
@@ -48,7 +49,7 @@ public class MemoryEventStoreMemBatchTest extends MemoryEventStoreBase {
 
     @Test
     public void testOnePutExceedLimit() {
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.setBufferSize(1);
         eventStore.setBatchMode(BatchMode.MEMSIZE);
         eventStore.start();
@@ -66,7 +67,7 @@ public class MemoryEventStoreMemBatchTest extends MemoryEventStoreBase {
     @Test
     public void testFullPut() {
         int bufferSize = 16;
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.setBufferSize(bufferSize);
         eventStore.setBatchMode(BatchMode.MEMSIZE);
         eventStore.start();
@@ -92,7 +93,7 @@ public class MemoryEventStoreMemBatchTest extends MemoryEventStoreBase {
 
     @Test
     public void testOnePutOneGet() {
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.setBatchMode(BatchMode.MEMSIZE);
         eventStore.start();
 
@@ -111,7 +112,7 @@ public class MemoryEventStoreMemBatchTest extends MemoryEventStoreBase {
     @Test
     public void testFullPutBatchGet() {
         int bufferSize = 16;
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.setBufferSize(bufferSize);
         eventStore.setBatchMode(BatchMode.MEMSIZE);
         eventStore.start();
@@ -131,7 +132,7 @@ public class MemoryEventStoreMemBatchTest extends MemoryEventStoreBase {
         Events<Event> entrys1 = eventStore.tryGet(first, bufferSize);
         System.out.println("first get size : " + entrys1.getEvents().size());
 
-        Assert.assertTrue(entrys1.getEvents().size() == bufferSize);
+        Assert.assertEquals(entrys1.getEvents().size(), bufferSize);
         Assert.assertEquals(first, entrys1.getPositionRange().getStart());
         Assert.assertEquals(lastest, entrys1.getPositionRange().getEnd());
 
@@ -143,7 +144,7 @@ public class MemoryEventStoreMemBatchTest extends MemoryEventStoreBase {
     @Ignore
     @Test
     public void testBlockPutOneGet() {
-        final MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        final ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.setBufferSize(16);
         eventStore.setBatchMode(BatchMode.MEMSIZE);
         eventStore.start();
@@ -194,7 +195,7 @@ public class MemoryEventStoreMemBatchTest extends MemoryEventStoreBase {
     @Test
     public void testRollback() {
         int bufferSize = 16;
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.setBufferSize(bufferSize);
         eventStore.setBatchMode(BatchMode.MEMSIZE);
         eventStore.start();
@@ -252,7 +253,7 @@ public class MemoryEventStoreMemBatchTest extends MemoryEventStoreBase {
     @Test
     public void testAck() {
         int bufferSize = 16;
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.setBufferSize(bufferSize);
         eventStore.setBatchMode(BatchMode.MEMSIZE);
         eventStore.start();

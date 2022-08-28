@@ -31,10 +31,9 @@ import com.alibaba.otter.canal.spi.CanalMetricsProvider;
 import com.alibaba.otter.canal.spi.CanalMetricsService;
 import com.alibaba.otter.canal.spi.NopCanalMetricsService;
 import com.alibaba.otter.canal.store.CanalEventStore;
-import com.alibaba.otter.canal.store.memory.MemoryEventStoreWithBuffer;
+import com.alibaba.otter.canal.store.memory.ConcurrentMemoryEventStoreWithBuffer;
 import com.alibaba.otter.canal.store.model.Event;
 import com.alibaba.otter.canal.store.model.Events;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.MigrateMap;
 
@@ -559,8 +558,8 @@ public class CanalServerWithEmbedded extends AbstractCanalLifeCycle implements C
     }
 
     private boolean isRaw(CanalEventStore eventStore) {
-        if (eventStore instanceof MemoryEventStoreWithBuffer) {
-            return ((MemoryEventStoreWithBuffer) eventStore).isRaw();
+        if (eventStore instanceof ConcurrentMemoryEventStoreWithBuffer) {
+            return ((ConcurrentMemoryEventStoreWithBuffer) eventStore).isRaw();
         }
 
         return true;

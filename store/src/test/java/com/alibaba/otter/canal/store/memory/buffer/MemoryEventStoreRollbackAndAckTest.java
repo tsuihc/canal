@@ -8,7 +8,7 @@ import org.junit.Test;
 
 import com.alibaba.otter.canal.protocol.position.Position;
 import com.alibaba.otter.canal.store.helper.CanalEventUtils;
-import com.alibaba.otter.canal.store.memory.MemoryEventStoreWithBuffer;
+import com.alibaba.otter.canal.store.memory.ConcurrentMemoryEventStoreWithBuffer;
 import com.alibaba.otter.canal.store.model.Event;
 import com.alibaba.otter.canal.store.model.Events;
 
@@ -23,7 +23,7 @@ public class MemoryEventStoreRollbackAndAckTest extends MemoryEventStoreBase {
     @Test
     public void testRollback() {
         int bufferSize = 16;
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.setBufferSize(bufferSize);
         eventStore.start();
 
@@ -80,7 +80,7 @@ public class MemoryEventStoreRollbackAndAckTest extends MemoryEventStoreBase {
     @Test
     public void testAck() {
         int bufferSize = 16;
-        MemoryEventStoreWithBuffer eventStore = new MemoryEventStoreWithBuffer();
+        ConcurrentMemoryEventStoreWithBuffer eventStore = new ConcurrentMemoryEventStoreWithBuffer();
         eventStore.setBufferSize(bufferSize);
         eventStore.start();
 

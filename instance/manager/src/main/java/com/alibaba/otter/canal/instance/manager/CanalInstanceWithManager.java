@@ -57,7 +57,7 @@ import com.alibaba.otter.canal.protocol.position.EntryPosition;
 import com.alibaba.otter.canal.sink.entry.EntryEventSink;
 import com.alibaba.otter.canal.sink.entry.group.GroupEventSink;
 import com.alibaba.otter.canal.store.AbstractCanalStoreScavenge;
-import com.alibaba.otter.canal.store.memory.MemoryEventStoreWithBuffer;
+import com.alibaba.otter.canal.store.memory.ConcurrentMemoryEventStoreWithBuffer;
 import com.alibaba.otter.canal.store.model.BatchMode;
 
 /**
@@ -175,7 +175,7 @@ public class CanalInstanceWithManager extends AbstractCanalInstance {
         logger.info("init eventStore begin...");
         StorageMode mode = parameters.getStorageMode();
         if (mode.isMemory()) {
-            MemoryEventStoreWithBuffer memoryEventStore = new MemoryEventStoreWithBuffer();
+            ConcurrentMemoryEventStoreWithBuffer memoryEventStore = new ConcurrentMemoryEventStoreWithBuffer();
             memoryEventStore.setBufferSize(parameters.getMemoryStorageBufferSize());
             memoryEventStore.setBufferMemUnit(parameters.getMemoryStorageBufferMemUnit());
             memoryEventStore.setBatchMode(BatchMode.valueOf(parameters.getStorageBatchMode().name()));

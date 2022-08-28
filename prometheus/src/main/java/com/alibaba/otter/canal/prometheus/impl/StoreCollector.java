@@ -3,7 +3,7 @@ package com.alibaba.otter.canal.prometheus.impl;
 import com.alibaba.otter.canal.instance.core.CanalInstance;
 import com.alibaba.otter.canal.prometheus.InstanceRegistry;
 import com.alibaba.otter.canal.store.CanalEventStore;
-import com.alibaba.otter.canal.store.memory.MemoryEventStoreWithBuffer;
+import com.alibaba.otter.canal.store.memory.ConcurrentMemoryEventStoreWithBuffer;
 import com.alibaba.otter.canal.store.model.BatchMode;
 import com.google.common.base.Preconditions;
 import io.prometheus.client.Collector;
@@ -137,10 +137,10 @@ public class StoreCollector extends Collector implements InstanceRegistry {
         final String destination = instance.getDestination();
         StoreMetricsHolder holder = new StoreMetricsHolder();
         CanalEventStore store = instance.getEventStore();
-        if (!(store instanceof MemoryEventStoreWithBuffer)) {
+        if (!(store instanceof ConcurrentMemoryEventStoreWithBuffer)) {
             throw new IllegalArgumentException("EventStore must be MemoryEventStoreWithBuffer");
         }
-        MemoryEventStoreWithBuffer memStore = (MemoryEventStoreWithBuffer) store;
+        ConcurrentMemoryEventStoreWithBuffer memStore = (ConcurrentMemoryEventStoreWithBuffer) store;
         holder.batchMode = memStore.getBatchMode();
         holder.putSeq = memStore.getPutSequence();
         holder.ackSeq = memStore.getAckSequence();
